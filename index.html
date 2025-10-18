@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>XR Hybrid (AR + VR)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body { margin: 0; overflow: hidden; background: #000; }
+    </style>
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script type="module">
+      import { VRButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js';
+      import { ARButton } from 'https://unpkg.com/three@0.160.0/examples/jsm/webxr/ARButton.js';
+
+      // === SCENE ===
+      const scene = new THREE.Scene();
+
+      // === CAMERA ===
+      const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+      // === RENDERER ===
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      // === LIGHT ===
+      const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+      scene.add(light);
+
+      // === BOX OBJECT ===
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, 0.3, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x44aa88 })
+      );
+      box.position.set(0, 1.5, -2); // posisi default untuk VR
+      box.visible = false;
+      scene.add(box);
+
+      // === MODE DETECTION ===
+      if (navigator.xr) {
+        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+          if (supported) {
+            document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+            enableARHitTest();
+          } else {
+            document.body.appendChild(VRButton.createButton(renderer));
+            box.visible = true; // tampil langsung di VR
+          }
+        });
+      } else {
+        // fallback non XR
+        box.visible = true;
+      }
+
+      // === AR Hit Test ===
+      let hitTestSource = null;
+      let localSpace = null;
+      function enableARHitTest() {
+        renderer.xr.addEventListener('sessionstart', async () => {
+          const session = renderer.xr.getSession();
+          const viewerSpace = await session.requestReferenceSpace('viewer');
+          hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+          localSpace = await session.requestReferenceSpace('local');
+          session.addEventListener('end', () => {
+            hitTestSource = null;
+            localSpace = null;
+          });
+        });
+      }
+
+      // === ANIMATE ===
+      renderer.setAnimationLoop((timestamp, frame) => {
+        if (frame && hitTestSource) {
+          const hitTestResults = frame.getHitTestResults(hitTestSource);
+          if (hitTestResults.length > 0) {
+            const pose = hitTestResults[0].getPose(localSpace);
+            box.visible = true;
+            box.position.set(
+              pose.transform.position.x,
+              pose.transform.position.y,
+              pose.transform.position.z
+            );
+          }
+        }
+        box.rotation.y += 0.01;
+        renderer.render(scene, camera);
+      });
+
+      // === RESIZE ===
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </head>
+  <body></body>
+</html>
